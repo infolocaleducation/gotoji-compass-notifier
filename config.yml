@@ -9,7 +9,7 @@ timezone: Asia/Tokyo
 features:
   post_x: false         # Phase 1〜: Xへ投稿する(X APIの設定が済んだら true に)
   attach_image: true    # Phase 2〜: Xの投稿に画像を付ける
-  post_instagram: false # Phase 3〜: Instagramストーリーへ投稿する(Metaの設定が済んだら true に)
+  post_instagram: true  # Phase 3〜: Instagramストーリーへ投稿する
 
 # --- カレンダー読み取り ---
 calendar:
