@@ -1,0 +1,57 @@
+name: refresh-ig-token
+
+# Instagram 長期アクセストークン(約60日で失効)の自動更新(要件3.5)
+# - 週1回チェックし、残り21日を切ったら新トークンを取得
+# - GH_PAT(secrets 書き込み権限のあるPAT)があれば Secret を自動更新
+# - 無ければリマインドの Issue を作成
+
+on:
+  schedule:
+    - cron: "0 0 * * 1" # 毎週月曜 9:00 JST
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: トークン期限チェックと更新
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          META_APP_ID: ${{ secrets.META_APP_ID }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+        run: python -m src.ig_token
+
+      - name: Secret を自動更新 / できなければ Issue でリマインド
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          refreshed=$(python -c "import json;print(json.load(open('output/token_result.json'))['refreshed'])")
+          if [ "$refreshed" != "True" ]; then
+            echo "トークンはまだ有効です。何もしません。"
+            exit 0
+          fi
+          new_token=$(python -c "import json;print(json.load(open('output/token_result.json'))['new_token'])")
+          echo "::add-mask::$new_token"
+          if [ -n "$GH_PAT" ]; then
+            echo "$new_token" | GH_TOKEN="$GH_PAT" gh secret set IG_ACCESS_TOKEN --repo "${{ github.repository }}"
+            echo "IG_ACCESS_TOKEN Secret を自動更新しました。"
+          else
+            gh issue create \
+              --repo "${{ github.repository }}" \
+              --title "【要対応】Instagramアクセストークンの更新期限が近づいています" \
+              --body "IG_ACCESS_TOKEN の有効期限が21日以内です。Meta for Developers で新しい長期トークンを取得し、リポジトリの Actions Secrets を更新してください。GH_PAT Secret を登録すると次回から自動更新されます。"
+          fi

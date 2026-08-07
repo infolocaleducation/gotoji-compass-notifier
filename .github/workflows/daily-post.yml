@@ -1,0 +1,84 @@
+name: daily-post
+
+on:
+  schedule:
+    - cron: "0 23 * * *" # 毎朝 8:00 JST
+  workflow_dispatch: {} # 手動実行(テスト用)
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 依存関係と日本語フォントをインストール
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+          pip install -r requirements.txt
+
+      - name: カレンダー取得と画像生成
+        id: generate
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
+        run: python -m src.main generate
+
+      - name: X へ投稿
+        id: post_x
+        continue-on-error: true # 失敗しても他の投稿は続行(要件3.5)
+        env:
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+        run: python -m src.main post-x
+
+      - name: 画像をコミット(Instagram用の公開URLを作る)
+        id: commit
+        continue-on-error: true
+        run: |
+          if [ ! -f output/latest.png ]; then
+            echo "画像がありません(attach_image が無効)。コミットをスキップします。"
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/latest.png
+          if git diff --cached --quiet; then
+            echo "画像に変更なし(前回と同一)"
+          else
+            git commit -m "chore: 本日の開館時間画像を更新"
+            git push
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Instagram ストーリーへ投稿
+        id: post_ig
+        if: steps.commit.outcome == 'success'
+        continue-on-error: true
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+        run: >
+          python -m src.main post-instagram
+          --image-url "https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.commit.outputs.sha }}/output/latest.png"
+
+      - name: いずれかの投稿が失敗していたらジョブを失敗にする(メール通知用)
+        if: steps.post_x.outcome == 'failure' || steps.post_ig.outcome == 'failure' || steps.commit.outcome == 'failure'
+        run: |
+          echo "X: ${{ steps.post_x.outcome }} / commit: ${{ steps.commit.outcome }} / IG: ${{ steps.post_ig.outcome }}"
+          exit 1
