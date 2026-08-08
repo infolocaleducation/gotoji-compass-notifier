@@ -3,7 +3,12 @@ name: daily-post
 on:
   schedule:
     - cron: "45 22 * * *" # 毎朝 7:45 JST(GitHub側の遅延を見込んで前倒し。0分ちょうどは混雑して遅れやすい)
-  workflow_dispatch: {} # 手動実行(テスト用)
+  workflow_dispatch: # 手動実行(テスト用)
+    inputs:
+      dry_run:
+        description: "お試し実行(SNSに投稿せず画像生成のみ)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -36,8 +41,16 @@ jobs:
           GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
         run: python -m src.main generate
 
+      - name: 生成画像をアップロード(お試し実行時の確認用)
+        if: github.event.inputs.dry_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-image
+          path: output/latest.png
+
       - name: X へ投稿
         id: post_x
+        if: github.event.inputs.dry_run != 'true'
         continue-on-error: true # 失敗しても他の投稿は続行(要件3.5)
         env:
           X_API_KEY: ${{ secrets.X_API_KEY }}
@@ -48,6 +61,7 @@ jobs:
 
       - name: 画像をコミット(Instagram用の公開URLを作る)
         id: commit
+        if: github.event.inputs.dry_run != 'true'
         continue-on-error: true
         run: |
           if [ ! -f output/latest.png ]; then
@@ -68,7 +82,7 @@ jobs:
 
       - name: Instagram ストーリーへ投稿
         id: post_ig
-        if: steps.commit.outcome == 'success'
+        if: github.event.inputs.dry_run != 'true' && steps.commit.outcome == 'success'
         continue-on-error: true
         env:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}

@@ -12,8 +12,13 @@ features:
   post_instagram: true  # Phase 3〜: Instagramストーリーへ投稿する
 
 # --- カレンダー読み取り ---
+# タイトルの分類ルール(優先順位: 貸し切り > イベント > 開館)
 calendar:
-  keyword: 開館   # タイトルにこの文字を含む予定を「開館時間」として扱う
+  keyword: 開館             # 開館時間として表示(例: 「開館」「開館(北)」)
+  event_keyword: イベント    # イベント名+時間を表示(例: 「イベント:読書会」)
+  reserved_keywords:        # 「この時間は一般利用できません」として表示
+    - 貸し切り
+    - 貸切
 
 # --- 投稿文テンプレート ---
 # 使える変数: {date} = 8/7(金) 形式, {times} = 10:00〜18:00(複数は「 / 」区切り)
@@ -41,5 +46,9 @@ image:
   open_label: 本日の開館時間
   closed_label: 本日休館
   closed_message: また次の開館日にお会いしましょう
+  event_label: 本日のイベント
+  reserved_label: 貸し切り
+  reserved_note: この時間は一般利用できません
+  no_regular_open: 通常開館はありません
   # フォントを固定したい場合はパスを指定(空なら自動検出)
   font_path: ""

@@ -18,19 +18,29 @@ from .config import load_config, STATUS_PATH, OUTPUT_DIR
 def _build_text(config: dict, status: dict) -> str:
     post = config["post"]
     if status["closed"]:
-        return post["closed_template"].format(date=status["date"], times="")
-    times = post["times_separator"].join(
-        f"{s['start']}〜{s['end']}" for s in status["slots"]
-    )
-    return post["open_template"].format(date=status["date"], times=times)
+        text = post["closed_template"].format(date=status["date"], times="")
+    else:
+        times = post["times_separator"].join(
+            f"{s['start']}〜{s['end']}" for s in status["slots"]
+        )
+        text = post["open_template"].format(date=status["date"], times=times)
+    for ev in status.get("events", []):
+        text += f"\n📅 {ev['name']} {ev['start']}〜{ev['end']}"
+    for slot in status.get("reserved", []):
+        text += f"\n🔒 {slot['start']}〜{slot['end']} は貸し切りのため一般利用できません"
+    return text
 
 
 def cmd_generate(config: dict) -> None:
-    from .calendar_client import get_today_open_slots
+    from .calendar_client import get_today_schedule
 
-    status = get_today_open_slots(config)
+    status = get_today_schedule(config)
     status["text"] = _build_text(config, status)
     print(f"本日の状態: {'休館' if status['closed'] else status['slots']}")
+    if status.get("events"):
+        print(f"イベント: {status['events']}")
+    if status.get("reserved"):
+        print(f"貸し切り: {status['reserved']}")
     print(f"投稿文: {status['text']}")
 
     if config["features"]["attach_image"]:
