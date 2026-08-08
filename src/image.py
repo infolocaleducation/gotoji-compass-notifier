@@ -56,6 +56,57 @@ def _center_text(draw, y, text, font, fill, width):
     return y + (box[3] - box[1])
 
 
+def _draw_content(draw, y, config, status, font_path, theme, width):
+    """コンテンツを y から描画し、描画後の y を返す(レイアウト計測にも使う)。"""
+    img_conf = config["image"]
+    font_title = ImageFont.truetype(font_path, 72)
+    font_sub = ImageFont.truetype(font_path, 36)
+    font_date = ImageFont.truetype(font_path, 100)
+    font_label = ImageFont.truetype(font_path, 54)
+    font_time = ImageFont.truetype(font_path, 84)
+    font_item_time = ImageFont.truetype(font_path, 60)
+    font_note = ImageFont.truetype(font_path, 38)
+    font_msg = ImageFont.truetype(font_path, 48)
+
+    text, accent = theme["text"], theme["accent"]
+    max_text_width = width - SIDE_MARGIN * 2
+    events = status.get("events", [])
+    reserved = status.get("reserved", [])
+
+    y = _center_text(draw, y, img_conf["title"], font_title, text, width) + 28
+    y = _center_text(draw, y, img_conf["subtitle"], font_sub, text, width) + 100
+    y = _center_text(draw, y, status["date"], font_date, text, width) + 90
+
+    if status["closed"]:
+        y = _center_text(draw, y, img_conf["closed_label"], font_label, accent, width) + 100
+        y = _center_text(draw, y, img_conf["closed_message"], font_msg, text, width)
+    elif status["slots"]:
+        y = _center_text(draw, y, img_conf["open_label"], font_label, text, width) + 50
+        for slot in status["slots"]:
+            line = f"{slot['start']}〜{slot['end']}"
+            y = _center_text(draw, y, line, font_time, accent, width) + 40
+        y += 40
+    else:
+        # 開館なしだがイベントはある日
+        y = _center_text(draw, y, img_conf["no_regular_open"], font_note, text, width) + 70
+
+    if events:
+        y = _center_text(draw, y, f"― {img_conf['event_label']} ―", font_label, text, width) + 44
+        for ev in events:
+            name_font = _fit_font(draw, ev["name"], font_path, 60, max_text_width)
+            y = _center_text(draw, y, ev["name"], name_font, accent, width) + 20
+            y = _center_text(draw, y, f"{ev['start']}〜{ev['end']}", font_item_time, text, width) + 50
+        y += 30
+
+    if reserved:
+        y = _center_text(draw, y, f"― {img_conf['reserved_label']} ―", font_label, text, width) + 44
+        for slot in reserved:
+            y = _center_text(draw, y, f"{slot['start']}〜{slot['end']}", font_item_time, text, width) + 30
+        y = _center_text(draw, y, img_conf["reserved_note"], font_note, accent, width)
+
+    return y
+
+
 def generate_image(config: dict, status: dict) -> pathlib.Path:
     img_conf = config["image"]
     width, height = img_conf["width"], img_conf["height"]
@@ -70,55 +121,12 @@ def generate_image(config: dict, status: dict) -> pathlib.Path:
     draw = ImageDraw.Draw(image)
 
     font_path = _find_font(config)
-    font_title = ImageFont.truetype(font_path, 72)
-    font_sub = ImageFont.truetype(font_path, 36)
-    font_date = ImageFont.truetype(font_path, 100)
-    font_label = ImageFont.truetype(font_path, 54)
-    font_time = ImageFont.truetype(font_path, 84)
-    font_item_time = ImageFont.truetype(font_path, 60)
-    font_note = ImageFont.truetype(font_path, 38)
-    font_msg = ImageFont.truetype(font_path, 48)
 
-    text, accent = theme["text"], theme["accent"]
-    max_text_width = width - SIDE_MARGIN * 2
-
-    events = status.get("events", [])
-    reserved = status.get("reserved", [])
-    # セクション数に応じて上部の余白を詰める
-    compact = bool(events) or bool(reserved)
-
-    y = 150 if compact else 220
-    y = _center_text(draw, y, img_conf["title"], font_title, text, width) + 28
-    y = _center_text(draw, y, img_conf["subtitle"], font_sub, text, width) + (80 if compact else 150)
-
-    y = _center_text(draw, y, status["date"], font_date, text, width) + (70 if compact else 130)
-
-    if status["closed"]:
-        y = _center_text(draw, y, img_conf["closed_label"], font_label, accent, width) + 110
-        y = _center_text(draw, y, img_conf["closed_message"], font_msg, text, width) + 60
-    elif status["slots"]:
-        y = _center_text(draw, y, img_conf["open_label"], font_label, text, width) + 50
-        for slot in status["slots"]:
-            line = f"{slot['start']}〜{slot['end']}"
-            y = _center_text(draw, y, line, font_time, accent, width) + 40
-        y += 30
-    else:
-        # 開館なしだがイベントはある日
-        y = _center_text(draw, y, img_conf["no_regular_open"], font_note, text, width) + 60
-
-    if events:
-        y = _center_text(draw, y, f"― {img_conf['event_label']} ―", font_label, text, width) + 40
-        for ev in events:
-            name_font = _fit_font(draw, ev["name"], font_path, 60, max_text_width)
-            y = _center_text(draw, y, ev["name"], name_font, accent, width) + 16
-            y = _center_text(draw, y, f"{ev['start']}〜{ev['end']}", font_item_time, text, width) + 44
-        y += 20
-
-    if reserved:
-        y = _center_text(draw, y, f"― {img_conf['reserved_label']} ―", font_label, text, width) + 40
-        for slot in reserved:
-            y = _center_text(draw, y, f"{slot['start']}〜{slot['end']}", font_item_time, text, width) + 14
-        y = _center_text(draw, y, img_conf["reserved_note"], font_note, accent, width) + 30
+    # 1回目は計測用に描画してコンテンツの高さを求め、上下中央に配置し直す
+    scratch = ImageDraw.Draw(Image.new("RGB", (width, height)))
+    content_height = _draw_content(scratch, 0, config, status, font_path, theme, width)
+    start_y = max(120, (height - content_height) // 2 - 60)
+    _draw_content(draw, start_y, config, status, font_path, theme, width)
 
     IMAGE_PATH.parent.mkdir(exist_ok=True)
     image.save(IMAGE_PATH)

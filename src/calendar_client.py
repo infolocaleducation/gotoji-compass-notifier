@@ -22,8 +22,8 @@ SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
 WEEKDAYS_JA = ["月", "火", "水", "木", "金", "土", "日"]
 
-# イベント名抽出時に取り除く区切り文字
-_SEPARATORS = " 　::・-〜~/|「」()()[]"
+# イベント名抽出時に取り除く区切り文字(名前の一部になりうる括弧類は含めない)
+_SEPARATORS = " 　::・-〜~/|"
 
 
 def _credentials() -> service_account.Credentials:
