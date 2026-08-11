@@ -38,6 +38,22 @@ def _extract_event_name(title: str, keyword: str) -> str:
     return name or keyword
 
 
+def _merge_ranges(ranges: list) -> list:
+    """重なり・連続する時間帯を1つに結合し、表示用の時刻文字列にして返す。
+
+    例: [(11:00,16:00), (11:00,17:00)] → [{"start":"11:00","end":"17:00"}]
+    """
+    merged = []
+    for start, end in sorted(ranges):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return [
+        {"start": s.strftime("%H:%M"), "end": e.strftime("%H:%M")} for s, e in merged
+    ]
+
+
 def get_today_schedule(config: dict) -> dict:
     """当日の予定を分類して dict で返す。
 
@@ -71,7 +87,7 @@ def get_today_schedule(config: dict) -> dict:
         .execute()
     )
 
-    slots, events, reserved = [], [], []
+    open_ranges, reserved_ranges, events = [], [], []
     for item in result.get("items", []):
         title = item.get("summary", "")
         start_raw = item["start"].get("dateTime")
@@ -79,15 +95,25 @@ def get_today_schedule(config: dict) -> dict:
         if not start_raw or not end_raw:
             # 終日予定は時刻が定まらないためスキップ(時刻付きで登録する運用)
             continue
-        start = datetime.datetime.fromisoformat(start_raw).astimezone(tz).strftime("%H:%M")
-        end = datetime.datetime.fromisoformat(end_raw).astimezone(tz).strftime("%H:%M")
+        start_dt = datetime.datetime.fromisoformat(start_raw).astimezone(tz)
+        end_dt = datetime.datetime.fromisoformat(end_raw).astimezone(tz)
 
         if any(kw in title for kw in reserved_kws):
-            reserved.append({"start": start, "end": end})
+            reserved_ranges.append((start_dt, end_dt))
         elif event_kw in title:
-            events.append({"name": _extract_event_name(title, event_kw), "start": start, "end": end})
+            events.append(
+                {
+                    "name": _extract_event_name(title, event_kw),
+                    "start": start_dt.strftime("%H:%M"),
+                    "end": end_dt.strftime("%H:%M"),
+                }
+            )
         elif open_kw in title:
-            slots.append({"start": start, "end": end})
+            open_ranges.append((start_dt, end_dt))
+
+    # 複数スタッフが重複して予定を入れた場合などに備え、重なる時間帯は結合する
+    slots = _merge_ranges(open_ranges)
+    reserved = _merge_ranges(reserved_ranges)
 
     date_str = f"{now.month}/{now.day}({WEEKDAYS_JA[now.weekday()]})"
     return {
