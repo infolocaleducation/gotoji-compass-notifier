@@ -54,8 +54,8 @@ def _merge_ranges(ranges: list) -> list:
     ]
 
 
-def get_today_schedule(config: dict) -> dict:
-    """当日の予定を分類して dict で返す。
+def get_today_schedule(config: dict, day_offset: int = 0) -> dict:
+    """対象日(今日+day_offset日)の予定を分類して dict で返す。
 
     返り値例:
       {"date": "8/8(土)", "closed": False,
@@ -70,8 +70,8 @@ def get_today_schedule(config: dict) -> dict:
     reserved_kws = cal_conf.get("reserved_keywords", ["貸し切り", "貸切"])
     calendar_id = os.environ["GOOGLE_CALENDAR_ID"]
 
-    now = datetime.datetime.now(tz)
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    target = datetime.datetime.now(tz) + datetime.timedelta(days=day_offset)
+    day_start = target.replace(hour=0, minute=0, second=0, microsecond=0)
     day_end = day_start + datetime.timedelta(days=1)
 
     service = build("calendar", "v3", credentials=_credentials(), cache_discovery=False)
@@ -115,7 +115,7 @@ def get_today_schedule(config: dict) -> dict:
     slots = _merge_ranges(open_ranges)
     reserved = _merge_ranges(reserved_ranges)
 
-    date_str = f"{now.month}/{now.day}({WEEKDAYS_JA[now.weekday()]})"
+    date_str = f"{target.month}/{target.day}({WEEKDAYS_JA[target.weekday()]})"
     return {
         "date": date_str,
         "closed": not slots and not events,

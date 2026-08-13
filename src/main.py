@@ -31,12 +31,12 @@ def _build_text(config: dict, status: dict) -> str:
     return text
 
 
-def cmd_generate(config: dict) -> None:
+def cmd_generate(config: dict, day_offset: int = 0) -> None:
     from .calendar_client import get_today_schedule
 
-    status = get_today_schedule(config)
+    status = get_today_schedule(config, day_offset=day_offset)
     status["text"] = _build_text(config, status)
-    print(f"本日の状態: {'休館' if status['closed'] else status['slots']}")
+    print(f"{status['date']} の状態: {'休館' if status['closed'] else status['slots']}")
     if status.get("events"):
         print(f"イベント: {status['events']}")
     if status.get("reserved"):
@@ -81,7 +81,8 @@ def cmd_post_instagram(config: dict, image_url: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="gotoji-compass-notifier")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("generate")
+    gen = sub.add_parser("generate")
+    gen.add_argument("--day-offset", type=int, default=0, help="0=今日, 1=明日")
     sub.add_parser("post-x")
     ig = sub.add_parser("post-instagram")
     ig.add_argument("--image-url", required=True)
@@ -90,7 +91,7 @@ def main() -> None:
     config = load_config()
 
     if args.command == "generate":
-        cmd_generate(config)
+        cmd_generate(config, day_offset=args.day_offset)
     elif args.command == "post-x":
         cmd_post_x(config)
     elif args.command == "post-instagram":

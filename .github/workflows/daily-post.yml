@@ -1,18 +1,22 @@
 name: daily-post
 
-# GitHubの定時実行は遅延・スキップが起きるため、1日に3回チャンスを設ける。
-# output/last_posted.txt の日付マーカーで二重投稿を防ぐ(最初に成功した1回だけ投稿)。
+# 前日の夜に「翌日の開館時間」を投稿する(ストーリーは24時間表示されるため当日もカバーされる)。
+# GitHubの定時実行は遅延・スキップが起きるため、夜に3回チャンスを設ける。
+# output/last_posted.txt の対象日マーカーで二重投稿を防ぐ(最初に成功した1回だけ投稿)。
 on:
   schedule:
-    - cron: "45 22 * * *" # 7:45 JST(1回目)
-    - cron: "35 23 * * *" # 8:35 JST(2回目・保険)
-    - cron: "35 0 * * *" # 9:35 JST(3回目・保険)
+    - cron: "0 14 * * *" # 23:00 JST(1回目)
+    - cron: "25 14 * * *" # 23:25 JST(2回目・保険)
+    - cron: "50 14 * * *" # 23:50 JST(3回目・保険)
   workflow_dispatch: # 手動実行(テスト用)
     inputs:
       dry_run:
         description: "お試し実行(SNSに投稿せず画像生成のみ)"
         type: boolean
         default: false
+      day_offset:
+        description: "どの日の予定を投稿するか(1=明日、0=今日)"
+        default: "1"
 
 permissions:
   contents: write
@@ -27,14 +31,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 本日投稿済みかチェック(定時実行のみ。手動実行は常に実行)
+      - name: 対象日が投稿済みかチェック(定時実行のみ。手動実行は常に実行)
         id: check
         run: |
-          today=$(TZ=Asia/Tokyo date +%F)
+          offset="${{ github.event.inputs.day_offset || '1' }}"
+          target=$(TZ=Asia/Tokyo date -d "+${offset} day" +%F)
+          echo "offset=$offset" >> "$GITHUB_OUTPUT"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "schedule" ] \
              && [ -f output/last_posted.txt ] \
-             && [ "$(cat output/last_posted.txt)" = "$today" ]; then
-            echo "本日($today)は投稿済みのためスキップします。"
+             && [ "$(cat output/last_posted.txt)" = "$target" ]; then
+            echo "対象日($target)は投稿済みのためスキップします。"
             echo "proceed=false" >> "$GITHUB_OUTPUT"
           else
             echo "proceed=true" >> "$GITHUB_OUTPUT"
@@ -59,7 +66,7 @@ jobs:
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
-        run: python -m src.main generate
+        run: python -m src.main generate --day-offset "${{ steps.check.outputs.offset }}"
 
       - name: 生成画像をアップロード(お試し実行時の確認用)
         if: steps.check.outputs.proceed == 'true' && github.event.inputs.dry_run == 'true'
@@ -116,7 +123,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          TZ=Asia/Tokyo date +%F > output/last_posted.txt
+          echo "${{ steps.check.outputs.target }}" > output/last_posted.txt
           git pull --rebase
           git add output/last_posted.txt
           git commit -m "chore: 投稿済みマーカー更新"

@@ -23,8 +23,8 @@ calendar:
 # --- 投稿文テンプレート ---
 # 使える変数: {date} = 8/7(金) 形式, {times} = 10:00〜18:00(複数は「 / 」区切り)
 post:
-  open_template: "【本日の開館時間】{date} {times} でオープンしています📍GOTOJI Compass #田川 #後藤寺"
-  closed_template: "【本日休館】{date} 本日はお休みです。また次の開館日にお会いしましょう🌙 GOTOJI Compass #田川 #後藤寺"
+  open_template: "【{date}の開館時間】{times} でオープンします📍GOTOJI Compass #田川 #後藤寺"
+  closed_template: "【{date}】休館日です。また次の開館日にお会いしましょう🌙 GOTOJI Compass #田川 #後藤寺"
   times_separator: " / "
 
 # --- 画像デザイン ---
@@ -43,10 +43,11 @@ image:
     accent: "#9AA7B8"
   title: "GOTOJI Compass"
   subtitle: "コミュニティスペース(福岡県田川市・後藤寺)"
-  open_label: 本日の開館時間
-  closed_label: 本日休館
+  # 前夜に翌日分を投稿するため「本日」とは書かず、上に表示される日付で伝える
+  open_label: 開館時間
+  closed_label: 休館日
   closed_message: また次の開館日にお会いしましょう
-  event_label: 本日のイベント
+  event_label: イベント
   reserved_label: 貸し切り
   reserved_note: この時間は一般利用できません
   no_regular_open: 通常開館はありません
