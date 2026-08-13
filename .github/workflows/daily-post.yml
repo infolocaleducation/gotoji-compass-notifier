@@ -1,8 +1,12 @@
 name: daily-post
 
+# GitHubの定時実行は遅延・スキップが起きるため、1日に3回チャンスを設ける。
+# output/last_posted.txt の日付マーカーで二重投稿を防ぐ(最初に成功した1回だけ投稿)。
 on:
   schedule:
-    - cron: "45 22 * * *" # 毎朝 7:45 JST(GitHub側の遅延を見込んで前倒し。0分ちょうどは混雑して遅れやすい)
+    - cron: "45 22 * * *" # 7:45 JST(1回目)
+    - cron: "35 23 * * *" # 8:35 JST(2回目・保険)
+    - cron: "35 0 * * *" # 9:35 JST(3回目・保険)
   workflow_dispatch: # 手動実行(テスト用)
     inputs:
       dry_run:
@@ -23,12 +27,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 本日投稿済みかチェック(定時実行のみ。手動実行は常に実行)
+        id: check
+        run: |
+          today=$(TZ=Asia/Tokyo date +%F)
+          if [ "${{ github.event_name }}" = "schedule" ] \
+             && [ -f output/last_posted.txt ] \
+             && [ "$(cat output/last_posted.txt)" = "$today" ]; then
+            echo "本日($today)は投稿済みのためスキップします。"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.check.outputs.proceed == 'true'
         with:
           python-version: "3.12"
           cache: pip
 
       - name: 依存関係と日本語フォントをインストール
+        if: steps.check.outputs.proceed == 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq fonts-noto-cjk
@@ -36,13 +55,14 @@ jobs:
 
       - name: カレンダー取得と画像生成
         id: generate
+        if: steps.check.outputs.proceed == 'true'
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
         run: python -m src.main generate
 
       - name: 生成画像をアップロード(お試し実行時の確認用)
-        if: github.event.inputs.dry_run == 'true'
+        if: steps.check.outputs.proceed == 'true' && github.event.inputs.dry_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: preview-image
@@ -50,7 +70,7 @@ jobs:
 
       - name: X へ投稿
         id: post_x
-        if: github.event.inputs.dry_run != 'true'
+        if: steps.check.outputs.proceed == 'true' && github.event.inputs.dry_run != 'true'
         continue-on-error: true # 失敗しても他の投稿は続行(要件3.5)
         env:
           X_API_KEY: ${{ secrets.X_API_KEY }}
@@ -61,7 +81,7 @@ jobs:
 
       - name: 画像をコミット(Instagram用の公開URLを作る)
         id: commit
-        if: github.event.inputs.dry_run != 'true'
+        if: steps.check.outputs.proceed == 'true' && github.event.inputs.dry_run != 'true'
         continue-on-error: true
         run: |
           if [ ! -f output/latest.png ]; then
@@ -82,7 +102,7 @@ jobs:
 
       - name: Instagram ストーリーへ投稿
         id: post_ig
-        if: github.event.inputs.dry_run != 'true' && steps.commit.outcome == 'success'
+        if: steps.check.outputs.proceed == 'true' && github.event.inputs.dry_run != 'true' && steps.commit.outcome == 'success'
         continue-on-error: true
         env:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
@@ -90,6 +110,17 @@ jobs:
         run: >
           python -m src.main post-instagram
           --image-url "https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.commit.outputs.sha }}/output/latest.png"
+
+      - name: 投稿済みマーカーを記録(以降の定時実行をスキップさせる)
+        if: steps.post_ig.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TZ=Asia/Tokyo date +%F > output/last_posted.txt
+          git pull --rebase
+          git add output/last_posted.txt
+          git commit -m "chore: 投稿済みマーカー更新"
+          git push
 
       - name: いずれかの投稿が失敗していたらジョブを失敗にする(メール通知用)
         if: steps.post_x.outcome == 'failure' || steps.post_ig.outcome == 'failure' || steps.commit.outcome == 'failure'
