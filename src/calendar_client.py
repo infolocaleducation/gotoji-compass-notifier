@@ -38,6 +38,11 @@ def _extract_event_name(title: str, keyword: str) -> str:
     return name or keyword
 
 
+def _fmt_time(dt: datetime.datetime) -> str:
+    """9:00 のように先頭ゼロなしで時刻を整形する。"""
+    return f"{dt.hour}:{dt.minute:02d}"
+
+
 def _merge_ranges(ranges: list) -> list:
     """重なり・連続する時間帯を1つに結合し、表示用の時刻文字列にして返す。
 
@@ -49,9 +54,7 @@ def _merge_ranges(ranges: list) -> list:
             merged[-1][1] = max(merged[-1][1], end)
         else:
             merged.append([start, end])
-    return [
-        {"start": s.strftime("%H:%M"), "end": e.strftime("%H:%M")} for s, e in merged
-    ]
+    return [{"start": _fmt_time(s), "end": _fmt_time(e)} for s, e in merged]
 
 
 def get_today_schedule(config: dict, day_offset: int = 0) -> dict:
@@ -104,8 +107,8 @@ def get_today_schedule(config: dict, day_offset: int = 0) -> dict:
             events.append(
                 {
                     "name": _extract_event_name(title, event_kw),
-                    "start": start_dt.strftime("%H:%M"),
-                    "end": end_dt.strftime("%H:%M"),
+                    "start": _fmt_time(start_dt),
+                    "end": _fmt_time(end_dt),
                 }
             )
         elif open_kw in title:
