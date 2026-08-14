@@ -15,8 +15,8 @@ on:
         type: boolean
         default: false
       day_offset:
-        description: "どの日の予定を投稿するか(1=明日、0=今日)"
-        default: "1"
+        description: "どの日の予定を投稿するか(auto=時刻から自動判定、1=明日、0=今日)"
+        default: "auto"
 
 permissions:
   contents: write
@@ -34,7 +34,13 @@ jobs:
       - name: 対象日が投稿済みかチェック(定時実行のみ。手動実行は常に実行)
         id: check
         run: |
-          offset="${{ github.event.inputs.day_offset || '1' }}"
+          offset="${{ github.event.inputs.day_offset || 'auto' }}"
+          if [ "$offset" = "auto" ]; then
+            # 昼12時以降なら「明日」の予告、日付が変わった後(深夜〜午前)に
+            # 遅延実行された場合は「今日」の分を投稿する
+            hour=$(TZ=Asia/Tokyo date +%H)
+            if [ "$hour" -ge 12 ]; then offset=1; else offset=0; fi
+          fi
           target=$(TZ=Asia/Tokyo date -d "+${offset} day" +%F)
           echo "offset=$offset" >> "$GITHUB_OUTPUT"
           echo "target=$target" >> "$GITHUB_OUTPUT"
@@ -119,18 +125,20 @@ jobs:
           --image-url "https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.commit.outputs.sha }}/output/latest.png"
 
       - name: 投稿済みマーカーを記録(以降の定時実行をスキップさせる)
+        id: marker
         if: steps.post_ig.outcome == 'success'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 先にリモートと同期してからマーカーを書く(逆順だと unstaged changes で失敗する)
+          git pull --rebase --autostash
           echo "${{ steps.check.outputs.target }}" > output/last_posted.txt
-          git pull --rebase
           git add output/last_posted.txt
           git commit -m "chore: 投稿済みマーカー更新"
-          git push
+          git push || { git pull --rebase --autostash && git push; }
 
-      - name: いずれかの投稿が失敗していたらジョブを失敗にする(メール通知用)
-        if: steps.post_x.outcome == 'failure' || steps.post_ig.outcome == 'failure' || steps.commit.outcome == 'failure'
+      - name: いずれかの処理が失敗していたらジョブを失敗にする(メール通知用)
+        if: steps.post_x.outcome == 'failure' || steps.post_ig.outcome == 'failure' || steps.commit.outcome == 'failure' || steps.marker.outcome == 'failure'
         run: |
-          echo "X: ${{ steps.post_x.outcome }} / commit: ${{ steps.commit.outcome }} / IG: ${{ steps.post_ig.outcome }}"
+          echo "X: ${{ steps.post_x.outcome }} / commit: ${{ steps.commit.outcome }} / IG: ${{ steps.post_ig.outcome }} / marker: ${{ steps.marker.outcome }}"
           exit 1
