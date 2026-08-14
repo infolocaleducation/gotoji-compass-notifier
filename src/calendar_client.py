@@ -121,6 +121,7 @@ def get_today_schedule(config: dict, day_offset: int = 0) -> dict:
     date_str = f"{target.month}/{target.day}({WEEKDAYS_JA[target.weekday()]})"
     return {
         "date": date_str,
+        "date_iso": target.strftime("%Y-%m-%d"),
         "closed": not slots and not events,
         "slots": slots,
         "events": events,

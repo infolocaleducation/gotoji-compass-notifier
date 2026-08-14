@@ -51,5 +51,7 @@ image:
   reserved_label: 貸し切り
   reserved_note: この時間は一般利用できません
   no_regular_open: 通常開館はありません
+  # 動画背景のときに文字を読みやすくする暗幕の濃さ(0=なし〜1=真っ黒)
+  video_scrim: 0.4
   # フォントを固定したい場合はパスを指定(空なら自動検出)
   font_path: ""

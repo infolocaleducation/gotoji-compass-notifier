@@ -8,3 +8,5 @@ __pycache__/
 # output/latest.png は Instagram 用にコミットする(除外しない)
 output/status.json
 output/token_result.json
+output/overlay.png
+output/story.mp4

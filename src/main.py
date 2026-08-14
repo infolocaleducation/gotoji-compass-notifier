@@ -44,10 +44,12 @@ def cmd_generate(config: dict, day_offset: int = 0) -> None:
     print(f"投稿文: {status['text']}")
 
     if config["features"]["attach_image"]:
-        from .image import generate_image
+        from .image import generate_image, generate_overlay
 
         path = generate_image(config, status)
         print(f"画像を生成しました: {path}")
+        overlay = generate_overlay(config, status)
+        print(f"動画用オーバーレイを生成しました: {overlay}")
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     with open(STATUS_PATH, "w", encoding="utf-8") as f:
@@ -69,13 +71,13 @@ def cmd_post_x(config: dict) -> None:
     post_to_x(status["text"], with_image=config["features"]["attach_image"])
 
 
-def cmd_post_instagram(config: dict, image_url: str) -> None:
+def cmd_post_instagram(config: dict, image_url: str, video_url: str) -> None:
     if not config["features"]["post_instagram"]:
         print("config.yml で post_instagram が無効のためスキップします。")
         return
     from .post_instagram import post_story
 
-    post_story(image_url)
+    post_story(image_url=image_url, video_url=video_url)
 
 
 def main() -> None:
@@ -84,8 +86,10 @@ def main() -> None:
     gen = sub.add_parser("generate")
     gen.add_argument("--day-offset", type=int, default=0, help="0=今日, 1=明日")
     sub.add_parser("post-x")
+    sub.add_parser("compose-video")
     ig = sub.add_parser("post-instagram")
-    ig.add_argument("--image-url", required=True)
+    ig.add_argument("--image-url")
+    ig.add_argument("--video-url")
 
     args = parser.parse_args()
     config = load_config()
@@ -94,8 +98,12 @@ def main() -> None:
         cmd_generate(config, day_offset=args.day_offset)
     elif args.command == "post-x":
         cmd_post_x(config)
+    elif args.command == "compose-video":
+        from .video import compose_story_video
+
+        compose_story_video()
     elif args.command == "post-instagram":
-        cmd_post_instagram(config, args.image_url)
+        cmd_post_instagram(config, args.image_url, args.video_url)
 
 
 if __name__ == "__main__":

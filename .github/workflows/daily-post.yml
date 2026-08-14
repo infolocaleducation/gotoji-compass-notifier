@@ -74,12 +74,25 @@ jobs:
           GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
         run: python -m src.main generate --day-offset "${{ steps.check.outputs.offset }}"
 
+      - name: ストーリー動画を合成(背景動画+開館時間の文字)
+        id: compose
+        if: steps.check.outputs.proceed == 'true'
+        continue-on-error: true # 失敗しても画像投稿にフォールバックする
+        run: python -m src.main compose-video
+
       - name: 生成画像をアップロード(お試し実行時の確認用)
         if: steps.check.outputs.proceed == 'true' && github.event.inputs.dry_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: preview-image
           path: output/latest.png
+
+      - name: 生成動画をアップロード(お試し実行時の確認用)
+        if: steps.check.outputs.proceed == 'true' && github.event.inputs.dry_run == 'true' && steps.compose.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-video
+          path: output/story.mp4
 
       - name: X へ投稿
         id: post_x
@@ -113,16 +126,37 @@ jobs:
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Instagram ストーリーへ投稿
+      - name: 動画を公開用ブランチにアップロード(履歴を持たないため肥大化しない)
+        id: media
+        if: steps.check.outputs.proceed == 'true' && github.event.inputs.dry_run != 'true' && steps.compose.outcome == 'success'
+        continue-on-error: true
+        run: |
+          fname="story-$(TZ=Asia/Tokyo date +%Y%m%d-%H%M%S).mp4"
+          dir=$(mktemp -d)
+          cp output/story.mp4 "$dir/$fname"
+          cd "$dir"
+          git init -q -b media
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$fname"
+          git commit -q -m "story media"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" media
+          echo "url=https://raw.githubusercontent.com/${{ github.repository }}/media/$fname" >> "$GITHUB_OUTPUT"
+
+      - name: Instagram ストーリーへ投稿(動画優先・失敗時は画像)
         id: post_ig
         if: steps.check.outputs.proceed == 'true' && github.event.inputs.dry_run != 'true' && steps.commit.outcome == 'success'
         continue-on-error: true
         env:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-        run: >
-          python -m src.main post-instagram
-          --image-url "https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.commit.outputs.sha }}/output/latest.png"
+        run: |
+          if [ -n "${{ steps.media.outputs.url }}" ]; then
+            python -m src.main post-instagram --video-url "${{ steps.media.outputs.url }}"
+          else
+            echo "動画が使えないため画像で投稿します。"
+            python -m src.main post-instagram --image-url "https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.commit.outputs.sha }}/output/latest.png"
+          fi
 
       - name: 投稿済みマーカーを記録(以降の定時実行をスキップさせる)
         id: marker

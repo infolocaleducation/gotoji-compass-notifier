@@ -107,6 +107,28 @@ def _draw_content(draw, y, config, status, font_path, theme, width):
     return y
 
 
+def generate_overlay(config: dict, status: dict) -> pathlib.Path:
+    """動画合成用のオーバーレイPNG(半透明の暗幕+文字)を生成する。"""
+    img_conf = config["image"]
+    width, height = img_conf["width"], img_conf["height"]
+    theme = img_conf["closed"] if status["closed"] else img_conf["open"]
+    scrim_alpha = int(255 * float(img_conf.get("video_scrim", 0.4)))
+
+    image = Image.new("RGBA", (width, height), (0, 0, 0, scrim_alpha))
+    draw = ImageDraw.Draw(image)
+    font_path = _find_font(config)
+
+    scratch = ImageDraw.Draw(Image.new("RGB", (width, height)))
+    content_height = _draw_content(scratch, 0, config, status, font_path, theme, width)
+    start_y = max(120, (height - content_height) // 2 - 60)
+    _draw_content(draw, start_y, config, status, font_path, theme, width)
+
+    overlay_path = IMAGE_PATH.parent / "overlay.png"
+    overlay_path.parent.mkdir(exist_ok=True)
+    image.save(overlay_path)
+    return overlay_path
+
+
 def generate_image(config: dict, status: dict) -> pathlib.Path:
     img_conf = config["image"]
     width, height = img_conf["width"], img_conf["height"]
